@@ -467,12 +467,12 @@ async function addPost(){
       img: img, 
       likes: [], 
       refeed: [], 
-      comments: [],
-      reports: []
+      comments: []
     };
     
     const { error } = await supabaseClient.from('posts').insert([newPost]);
     if (error) {
+      console.error('Post upload failed:', error);
       showToast('Error uploading post to cloud.');
       return;
     }
