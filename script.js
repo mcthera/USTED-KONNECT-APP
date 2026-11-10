@@ -64,23 +64,38 @@ async function loadCloudData() {
       supabaseClient.from('reports').select('*')
     ]);
 
-    if (usersRes.data) data.users = usersRes.data;
-    if (postsRes.data) data.post = postsRes.data;
-    if (lostRes.data) data.lost = lostRes.data;
-    if (notifsRes.data) data.notifs = notifsRes.data;
-    if (reportsRes.data) data.reports = reportsRes.data;
+    let hasErrors = false;
+    for (const [name, result] of Object.entries({
+      users: usersRes,
+      post: postsRes,
+      lost: lostRes,
+      notifs: notifsRes,
+      reports: reportsRes
+    })) {
+      if (result.error) {
+        console.error(`Could not load ${name}:`, result.error);
+        hasErrors = true;
+      } else {
+        data[name] = result.data || [];
+      }
+    }
 
     // Validate active session user against fetched cloud users table
-    if (me && !data.users.some(u => u.name === me)) {
+    if (!usersRes.error && me && !data.users.some(u => u.name === me)) {
       me = null;
       localStorage.removeItem('campusUser');
     }
 
     renderFeed();
+    renderLost();
     renderHeader();
+    if (hasErrors) showToast('Some campus data could not be loaded.');
   } catch (err) {
     console.error('Cloud synchronization error:', err);
     showToast('Failed to sync with cloud database.');
+    renderFeed();
+    renderLost();
+    renderHeader();
   }
 }
 
@@ -185,51 +200,61 @@ async function submitform(){
   const name = document.getElementById('a-name').value.trim();
   const password = document.getElementById('a-password').value;
   const message = document.getElementById('auth-message');
+  const button = document.getElementById('auth-button');
   
   if (!name || !password) {
     message.textContent = 'Please enter your name and password.';
     return; 
   }
 
-  if (authMode === 'signup') {
-    const existingUser = data.users.find(u => u.name === name);
-    if(existingUser) {
-      message.textContent = 'That name is already taken.';
-      return;
+  button.disabled = true;
+  try {
+    if (authMode === 'signup') {
+      const existingUser = data.users.find(u => u.name === name);
+      if(existingUser) {
+        message.textContent = 'That name is already taken.';
+        return;
+      }
+      
+      const newUser = {
+        name: name, 
+        password: password,
+        phone: document.getElementById('a-phone').value,
+        dept: document.getElementById('a-dept').value,
+        index: document.getElementById('a-index').value,
+        gender: document.getElementById('a-gender').value,
+        skills: document.getElementById('a-skills').value
+      };
+
+      const { error } = await supabaseClient.from('users').insert([newUser]);
+      if (error) {
+        console.error('Registration failed:', error);
+        message.textContent = 'Registration failed. Please try again.';
+        return;
+      }
+      data.users.push(newUser);
+    } else {
+      const user = data.users.find(u => u.name === name && u.password === password);
+      if(!user) { 
+        message.textContent = 'Account not found or password is incorrect.';
+        return; 
+      }
     }
+
+    me = name;
+    localStorage.setItem('campusUser', me);
     
-    const newUser = {
-      name: name, 
-      password: password,
-      phone: document.getElementById('a-phone').value,
-      dept: document.getElementById('a-dept').value,
-      index: document.getElementById('a-index').value,
-      gender: document.getElementById('a-gender').value,
-      skills: document.getElementById('a-skills').value
-    };
-
-    const { error } = await supabaseClient.from('users').insert([newUser]);
-    if (error) {
-      message.textContent = 'Registration failed. Try again.';
-      return;
-    }
-    data.users.push(newUser);
-  } else {
-    const user = data.users.find(u => u.name === name && u.password === password);
-    if(!user) { 
-      message.textContent = 'Account not found or password is incorrect.';
-      return; 
-    }
+    message.textContent = '';
+    document.getElementById('app-auth').classList.remove('active');
+    renderHeader();
+    renderFeed();
+    showToast(authMode === 'signup' ? 'Account created. Welcome to CAMPUS X!' : 'Welcome back, ' + name + '!');
+  } catch (err) {
+    console.error('Authentication request failed:', err);
+    message.textContent = 'Could not connect to the server. Please try again.';
+  } finally {
+    button.disabled = false;
   }
-
-  me = name;
-  localStorage.setItem('campusUser', me);
-  
-  message.textContent = '';
-  document.getElementById('app-auth').classList.remove('active');
-  renderHeader();
-  renderFeed();
-  showToast(authMode === 'signup' ? 'Account created. Welcome to CAMPUS X!' : 'Welcome back, ' + name + '!');
 }
 
 function logout() {
@@ -301,7 +326,7 @@ function safe(text) {
 }
 
 function safeAttr(text) {
-  return safe(text).replace(/"/g, '"');
+  return safe(text).replace(/"/g, '&quot;');
 }
 
 function initials(name) {
@@ -320,13 +345,15 @@ async function notify(to, text){
   data.notifs.unshift(newNotif);
 }
 
-function readImage(fileInput, done) {
-  const file = fileInput.files[0];
-  if (!file) { done(''); return; }
-  const reader = new FileReader();
-  reader.onload = () => done(reader.result);
-  reader.onerror = () => showToast('Could not read that file.');
-  reader.readAsDataURL(file);
+function readImage(fileInput) {
+  const file = fileInput.files && fileInput.files[0];
+  if (!file) return Promise.resolve('');
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('Could not read the selected file.'));
+    reader.readAsDataURL(file);
+  });
 }
 
 
@@ -334,7 +361,13 @@ function readImage(fileInput, done) {
 // HOME FEED & POST MANAGEMENT (SUPABASE SYNCED)
 // ==========================================
 function findPost(id) { 
-  return data.post.find(p => p.id === id); 
+  const post = data.post.find(p => p.id === id);
+  if (post) {
+    if (!Array.isArray(post.likes)) post.likes = [];
+    if (!Array.isArray(post.refeed)) post.refeed = [];
+    if (!Array.isArray(post.comments)) post.comments = [];
+  }
+  return post;
 }
 
 function toggleName(list) {
@@ -411,12 +444,15 @@ function renderFeed(){
   }
 
   for (const post of data.post){
-    const liked = post.likes.includes(me);
-    const refeed = post.refeed.includes(me);
+    const likes = Array.isArray(post.likes) ? post.likes : [];
+    const refeeders = Array.isArray(post.refeed) ? post.refeed : [];
+    const comments = Array.isArray(post.comments) ? post.comments : [];
+    const liked = likes.includes(me);
+    const refeed = refeeders.includes(me);
     const reported = data.reports.some(r => r.type === 'post' && r.id === post.id && r.by === me);
     let commentsHTML = '';
     
-    for (const c of (post.comments || [])){
+    for (const c of comments){
       commentsHTML += '<div class="comment"><b>' + safe(c.by) + '</b>: ' + safe(c.text) + '</div>';
     }
     
@@ -426,11 +462,11 @@ function renderFeed(){
         <div class="body">
           <b>${safe(post.author)}</b> <span class="muted">· ${safe(post.programme)}</span>
           <p>${safe(post.text)}</p>
-          ${post.img ? '<img src="' + post.img + '" alt="Post attachment">' : ''}
+          ${post.img ? '<img src="' + safeAttr(post.img) + '" alt="Post attachment">' : ''}
           <div class="actions">
-            <button class="small btn-action" onclick="toggleLike(${post.id})">${liked ? 'Liked ❤️' : 'Like'} (${post.likes.length})</button>
-            <button class="small btn-action" onclick="addComment(${post.id})">Comment (${post.comments.length})</button>
-            <button class="small btn-action" onclick="toggleRefeed(${post.id})">${refeed ? 'Refeeded 🔄' : 'Refeed'} (${post.refeed.length})</button>
+            <button class="small btn-action" onclick="toggleLike(${post.id})">${liked ? 'Liked ❤️' : 'Like'} (${likes.length})</button>
+            <button class="small btn-action" onclick="addComment(${post.id})">Comment (${comments.length})</button>
+            <button class="small btn-action" onclick="toggleRefeed(${post.id})">${refeed ? 'Refeeded 🔄' : 'Refeed'} (${refeeders.length})</button>
             <button class="small btn-action" onclick="shareContent('post', ${post.id})">Share</button>
             <button class="small btn-action" data-chat="${safeAttr(post.author)}">DM</button>
             <button class="small btn-action" onclick="reportContent('post', ${post.id})" ${reported ? 'disabled' : ''}>${reported ? 'Reported' : 'Report'}</button>
@@ -457,7 +493,8 @@ async function addPost(){
     return;
   }
 
-  readImage(fileInput, async function(img){
+  try {
+    const img = await readImage(fileInput);
     const user = myUser();
     const newPost = {
       id: Date.now(), 
@@ -482,7 +519,10 @@ async function addPost(){
     fileInput.value = '';
     renderFeed();
     showToast('🚀 Posted to CampusX!');
-  });
+  } catch (err) {
+    console.error('Could not prepare post:', err);
+    showToast('Could not post. Check your connection and try again.');
+  }
 }
 
 
@@ -515,6 +555,7 @@ function addVideo() {
 }
 
 function renderLost() {
+  const search = (document.getElementById('lost-search')?.value || '').trim().toLowerCase();
   let chips = '';
   for (const c of ['All', 'Phone', 'Bag', 'Book', 'Pen', 'Other']){
     chips += '<button class="chip ' + (c === category ? 'on' : '') + '" onclick="setLostCategory(\'' + c + '\')">' + c + '</button>';
@@ -525,6 +566,8 @@ function renderLost() {
   let html = '';
   for (const item of data.lost) {
     if (category !== 'All' && item.category !== category) continue;
+    const searchableText = `${item.title || ''} ${item.comment || ''} ${item.category || ''}`.toLowerCase();
+    if (search && !searchableText.includes(search)) continue;
     html += '<div class="card"><b>' + safe(item.title) + '</b><p>' + safe(item.comment) + '</p></div>';
   }
   const lostList = document.getElementById('lost-list');
@@ -537,17 +580,30 @@ async function addLost() {
   if (!requiredlogin()) return;
   const title = document.getElementById('l-title').value.trim();
   if (!title) { showToast('Enter item name.'); return; }
-  readImage(document.getElementById('l-img'), async function(img){
+  try {
+    const imageInput = document.getElementById('l-img');
+    const img = await readImage(imageInput);
     const u = myUser();
     const newItem = {
       id: Date.now(), title: title, category: document.getElementById('l-category').value,
       by: me, phone: u.phone, dept: u.dept, comment: document.getElementById('l-comment').value, img: img, recovered: false
     };
-    await supabaseClient.from('lost').insert([newItem]);
+    const { error } = await supabaseClient.from('lost').insert([newItem]);
+    if (error) {
+      console.error('Lost item upload failed:', error);
+      showToast('Error reporting the lost item. Please try again.');
+      return;
+    }
     data.lost.unshift(newItem);
+    document.getElementById('l-title').value = '';
+    document.getElementById('l-comment').value = '';
+    imageInput.value = '';
     renderLost();
     showToast('Lost item reported.');
-  });
+  } catch (err) {
+    console.error('Could not prepare lost item:', err);
+    showToast('Could not report the item. Check your connection and try again.');
+  }
 }
 
 function renderNews() {

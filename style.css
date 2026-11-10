@@ -493,7 +493,7 @@ details summary {
 nav {
   position: fixed;
   z-index: 99;
-  bottom: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
   width: min(92%, 520px);
@@ -511,7 +511,9 @@ nav {
 
 nav button {
   flex: 1;
+  min-width: 0;
   min-height: 46px;
+  padding: 8px 4px;
   border: 0;
   border-radius: 18px;
   background: transparent;
@@ -583,4 +585,50 @@ nav button.on {
   margin: 0 0 16px;
   font-size: 1.25rem;
   font-weight: 800;
+}
+
+@media (max-width: 420px) {
+  .top {
+    gap: 8px;
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  #header-buttons {
+    gap: 5px;
+  }
+
+  #header-buttons .small {
+    padding-right: 9px;
+    padding-left: 9px;
+    font-size: 0.76rem;
+  }
+
+  main {
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  .pad {
+    padding: 18px;
+  }
+
+  nav {
+    width: calc(100% - 16px);
+    gap: 3px;
+    padding: 5px;
+  }
+
+  nav button {
+    padding-right: 2px;
+    padding-left: 2px;
+    font-size: clamp(0.68rem, 3vw, 0.82rem);
+    line-height: 1.15;
+    overflow-wrap: anywhere;
+  }
+
+  .composer,
+  .post {
+    padding: 16px;
+  }
 }
