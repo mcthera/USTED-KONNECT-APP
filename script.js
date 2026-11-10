@@ -2,8 +2,8 @@
 // CAMPUSX - PRODUCTION READY (SUPABASE POWERED)
 // ==========================================
 
-const SUPABASE_URL = 'https://etfnaatcohbuazsijhjw.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV0Zm5hYXRjb2hidWF6c2lqaGp3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQyNTQ5MjgsImV4cCI6MjEwOTgzMDkyOH0.eJl__0NPdQUbozI18ZEzSkkvGxKem-LaA17BfSQPojU';
+const SUPABASE_URL=https://lnggbqfrbcehuyjtlswn.supabase.co;
+const SUPABASE_ANON_KEY=sb_publishable_vSKR8TL4AUzMQWJiiZoMfA_mFPMx9qP;
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Application live state synced with Supabase cloud
