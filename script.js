@@ -9,6 +9,10 @@
 const SUPABASE_URL = 'https://lnggbqfrbcehuyjtlswn.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_vSKR8TL4AUzMQWJiiZoMfA_mFPMx9qP';
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const DISAPPEARING_MODE = true;
+const CONTENT_TTL_MS = 24 * 60 * 60 * 1000;
+const CONTENT_EXPIRY_CHECK_INTERVAL_MS = 60 * 1000;
+const expiredPostCleanupAttempts = new Set();
 
 // Application live state synced with Supabase cloud
 let data = {
@@ -49,19 +53,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     tickerText.textContent = announcements.map(a => `[${a.from}]: ${a.text}`).join('   ***   ');
   }
 
-  // Fetch initial live cloud data from Supabase tables
-  await loadCloudData();
+  if (DISAPPEARING_MODE) {
+    const cleanupRequest = cleanupExpiredCloudPosts();
+    const postsQuery = supabaseClient.from('posts').select('*').order('id', { ascending: false })
+      .gte('id', Date.now() - CONTENT_TTL_MS);
+    await loadCloudData(cleanupRequest, postsQuery);
+  } else {
+    await loadCloudData();
+  }
+
+  if (DISAPPEARING_MODE) {
+    setInterval(expireDisappearingContent, CONTENT_EXPIRY_CHECK_INTERVAL_MS);
+  }
 });
 
-async function loadCloudData() {
+async function loadCloudData(cleanupRequest, postsQuery) {
   try {
     // Fetch users, posts, lost & found from Supabase tables concurrently
     const [usersRes, postsRes, lostRes, notifsRes, reportsRes] = await Promise.all([
       supabaseClient.from('users').select('*'),
-      supabaseClient.from('posts').select('*').order('id', { ascending: false }),
+      postsQuery || supabaseClient.from('posts').select('*').order('id', { ascending: false }),
       supabaseClient.from('lost').select('*').order('id', { ascending: false }),
       supabaseClient.from('notifs').select('*'),
-      supabaseClient.from('reports').select('*')
+      supabaseClient.from('reports').select('*'),
+      cleanupRequest || Promise.resolve()
     ]);
 
     let hasErrors = false;
@@ -86,6 +101,7 @@ async function loadCloudData() {
       localStorage.removeItem('campusUser');
     }
 
+    expireDisappearingContent();
     renderFeed();
     renderLost();
     renderHeader();
@@ -96,6 +112,92 @@ async function loadCloudData() {
     renderFeed();
     renderLost();
     renderHeader();
+  }
+}
+
+async function cleanupExpiredCloudPosts() {
+  const cutoff = Date.now() - CONTENT_TTL_MS;
+  try {
+    const { data: candidates, error } = await supabaseClient
+      .from('posts')
+      .select('id')
+      .lt('id', cutoff);
+    if (error) {
+      console.error('Could not find expired posts for cleanup:', error);
+      showToast('Expired posts will be hidden, but cloud cleanup failed.');
+      return;
+    }
+
+    const expiredPosts = (candidates || []).filter(post => isExpiredContent(post));
+    if (expiredPosts.length > 0) await deleteExpiredPosts(expiredPosts);
+  } catch (err) {
+    console.error('Could not find expired posts for cleanup:', err);
+    showToast('Expired posts will be hidden, but cloud cleanup failed.');
+  }
+}
+
+function getContentCreatedAt(item) {
+  const timestamp = item.created_at ?? item.createdAt ?? item.timestamp;
+  if (timestamp !== undefined && timestamp !== null) {
+    const numericTimestamp = Number(timestamp);
+    if (Number.isFinite(numericTimestamp)) {
+      return numericTimestamp < 1e12 ? numericTimestamp * 1000 : numericTimestamp;
+    }
+    const parsedTimestamp = Date.parse(timestamp);
+    if (Number.isFinite(parsedTimestamp)) return parsedTimestamp;
+  }
+
+  // Existing posts use Date.now() as their database ID.
+  const idTimestamp = Number(item.id);
+  return Number.isFinite(idTimestamp) && idTimestamp >= 1e12 ? idTimestamp : null;
+}
+
+function isExpiredContent(item, now = Date.now()) {
+  if (!DISAPPEARING_MODE) return false;
+  const createdAt = getContentCreatedAt(item);
+  return createdAt !== null && now - createdAt >= CONTENT_TTL_MS;
+}
+
+async function deleteExpiredPosts(posts) {
+  const ids = posts
+    .map(post => post.id)
+    .filter(id => id !== undefined && id !== null && !expiredPostCleanupAttempts.has(id));
+  if (ids.length === 0) return;
+
+  ids.forEach(id => expiredPostCleanupAttempts.add(id));
+  try {
+    const { error } = await supabaseClient.from('posts').delete().in('id', ids);
+    if (error) {
+      console.error('Expired posts are hidden but could not be deleted from Supabase:', error);
+      showToast('Expired posts are hidden, but cloud cleanup failed.');
+    }
+  } catch (err) {
+    console.error('Expired posts are hidden but could not be deleted from Supabase:', err);
+    showToast('Expired posts are hidden, but cloud cleanup failed.');
+  }
+}
+
+function expireDisappearingContent() {
+  if (!DISAPPEARING_MODE) return;
+
+  const expiredPosts = data.post.filter(post => isExpiredContent(post));
+  if (expiredPosts.length > 0) {
+    const expiredIds = new Set(expiredPosts.map(post => post.id));
+    data.post = data.post.filter(post => !expiredIds.has(post.id));
+    renderFeed();
+    void deleteExpiredPosts(expiredPosts);
+  }
+
+  const expiredVideos = videos.filter(video => isExpiredContent(video));
+  if (expiredVideos.length > 0) {
+    const expiredIds = new Set(expiredVideos.map(video => video.id));
+    expiredVideos.forEach(video => {
+      if (video.src && video.src.startsWith('blob:')) URL.revokeObjectURL(video.src);
+    });
+    videos = videos.filter(video => !expiredIds.has(video.id));
+    if (document.getElementById('page-videos')?.classList.contains('active')) {
+      renderVideos();
+    }
   }
 }
 
@@ -444,6 +546,7 @@ function renderFeed(){
   }
 
   for (const post of data.post){
+    if (isExpiredContent(post)) continue;
     const likes = Array.isArray(post.likes) ? post.likes : [];
     const refeeders = Array.isArray(post.refeed) ? post.refeed : [];
     const comments = Array.isArray(post.comments) ? post.comments : [];
@@ -534,6 +637,7 @@ function renderVideos() {
   if(!container) return;
   let html = '';
   for (const v of videos) {
+    if (isExpiredContent(v)) continue;
     const media = v.src ? '<video src="' + v.src + '" controls loop playsinline></video>' : '';
     const comments = (v.comments || []).map(c => '<div class="comment"><b>' + safe(c.by) + '</b>: ' + safe(c.text) + '</div>').join('');
     html += '<div class="reel">' + media + '<div class="info"><b>' + safe(v.by) + '</b><br>' + safe(v.desc) + comments + '</div></div>';
@@ -549,7 +653,7 @@ function addVideo() {
   videos.unshift({
     id: Date.now(), by: me, dept: u.dept, index: u.index, skills: u.skills,
     desc: document.getElementById('v-desc').value,
-    src: URL.createObjectURL(file), likes: [], comments: []
+    src: URL.createObjectURL(file), createdAt: Date.now(), likes: [], comments: []
   });
   renderVideos();
 }
