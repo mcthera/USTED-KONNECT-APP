@@ -13,6 +13,7 @@ const DISAPPEARING_MODE = true;
 const CONTENT_TTL_MS = 24 * 60 * 60 * 1000;
 const CONTENT_EXPIRY_CHECK_INTERVAL_MS = 60 * 1000;
 const expiredPostCleanupAttempts = new Set();
+const LOCAL_ANNOUNCEMENTS_KEY = 'campusAnnouncements';
 const DEFAULT_ANNOUNCEMENTS = [
   { author: 'SRC PRESIDENT', text: 'INCOMING SRC WEEK PARTY AND DRINKS!!.' },
   { author: 'IT 2A COURSE REP', text: 'NEW BOOKS AVAILABLE.' },
@@ -35,6 +36,7 @@ let authMode = 'signup';
 let toastTimer;
 let chatWith = null;       
 let category = 'All';      
+let localAnnouncements = loadLocalAnnouncements();
 
 // ==========================================
 // INITIALIZATION & CLOUD DATA SYNC
@@ -58,7 +60,29 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 function getVisibleAnnouncements() {
-  return data.announcements.length > 0 ? data.announcements : DEFAULT_ANNOUNCEMENTS;
+  const announcements = [...data.announcements, ...localAnnouncements];
+  return announcements.length > 0 ? announcements : DEFAULT_ANNOUNCEMENTS;
+}
+
+function loadLocalAnnouncements() {
+  try {
+    const savedAnnouncements = JSON.parse(localStorage.getItem(LOCAL_ANNOUNCEMENTS_KEY) || '[]');
+    return Array.isArray(savedAnnouncements) ? savedAnnouncements : [];
+  } catch (err) {
+    console.error('Could not load locally saved announcements:', err);
+    return [];
+  }
+}
+
+function saveLocalAnnouncement(announcement) {
+  localAnnouncements.unshift(announcement);
+  try {
+    localStorage.setItem(LOCAL_ANNOUNCEMENTS_KEY, JSON.stringify(localAnnouncements));
+  } catch (err) {
+    localAnnouncements.shift();
+    console.error('Could not save announcement on this device:', err);
+    throw err;
+  }
 }
 
 function renderAnnouncementTicker() {
@@ -690,9 +714,11 @@ function renderNews() {
     </form>` : '<p class="muted">Log in to post a campus announcement.</p>';
   const announcementCards = getVisibleAnnouncements().map(item => {
     const date = item.created_at ? new Date(item.created_at).toLocaleString() : '';
+    const localOnly = item.localOnly ? '<span class="announcement-local">This device only</span>' : '';
     return `<article class="card news">
       <b>${safe(item.author || item.from || 'CAMPUS X')}</b>
       <p>${safe(item.text)}</p>
+      ${localOnly}
       ${date ? `<time class="muted" datetime="${safeAttr(item.created_at)}">${safe(date)}</time>` : ''}
     </article>`;
   }).join('');
@@ -716,22 +742,27 @@ async function addAnnouncement(event) {
     const announcement = { author: me, text: text };
     const { error } = await supabaseClient.from('announcements').insert([announcement]);
     if (error) {
-      console.error('Announcement upload failed:', error);
-      showToast('Could not post announcement. Check the announcements table and try again.');
-      return;
+      console.warn('Cloud announcement posting failed; saving on this device instead:', error);
+      saveLocalAnnouncement({
+        ...announcement,
+        localOnly: true,
+        created_at: new Date().toISOString()
+      });
+      showToast('Announcement saved on this device only. Set up the announcements table to share it.');
+    } else {
+      data.announcements.unshift({
+        ...announcement,
+        created_at: new Date().toISOString()
+      });
+      showToast('Announcement posted.');
     }
 
-    data.announcements.unshift({
-      ...announcement,
-      created_at: new Date().toISOString()
-    });
     input.value = '';
     renderNews();
     renderAnnouncementTicker();
-    showToast('Announcement posted.');
   } catch (err) {
     console.error('Announcement upload failed:', err);
-    showToast('Could not post announcement. Check your connection and try again.');
+    showToast('Could not post or save the announcement. Check your connection and device storage.');
   } finally {
     button.disabled = false;
   }
