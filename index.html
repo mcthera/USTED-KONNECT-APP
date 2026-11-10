@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Google Fonts for vibrant typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <title>CAMPUS X</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- TOP BAR + LOGO -->
+    <header>
+        <div class="top">
+            <h1 class="logo">CAMPUS<span>X</span></h1>
+            <div id="header-buttons"></div><!--js fills this space-->
+        </div>
+        <!-- TICKER -->
+        <div class="ticker"><span id="ticker-text"></span></div>
+    </header>
+
+<main>
+    <!-- SIGN UP / LOGIN MODAL -->
+    <section id="app-auth" class="sign-up">
+        <div class="pad">
+            <div class="tabs">
+                <button id="tab-signup" class="on" onclick="showregister('signup')">Signup</button>
+                <button id="tab-login" onclick="showregister('login')">Login</button>
+            </div>
+            <input id="a-name" placeholder="Name / Username">
+            <input id="a-password" type="password" placeholder="Password">
+            <div id="signup-fields">
+                <input id="a-phone" placeholder="Phone number">
+                <input id="a-dept" placeholder="Enter Department eg BSC IT 2A">
+                <input id="a-index" placeholder="Enter index number">
+                <select id="a-gender"><option>MALE</option><option>FEMALE</option></select>
+                <input id="a-skills" placeholder="Tell us one interesting thing about you">
+            </div>
+            <button class="btn" id="auth-button" onclick="submitform()">Create Account</button>
+            <p id="auth-message" style="color: #EC4899; text-align: center; margin-top: 10px; font-weight: 700;"></p>
+        </div>
+    </section>
+
+    <!-- MAIN HOME FEED SECTION -->
+    <section id="page-feed" class="page active">
+        <div class="composer">
+            <textarea id="new-post" rows="3" placeholder="What's popping USTEDfo? 🔥"></textarea>
+            <input id="new-post-img" type="file" accept="image/*">
+            <button class="btn" onclick="addPost()">Post ✨</button>
+        </div>
+        <div id="feed-list"></div>
+    </section>
+
+    <!-- PAGE 3: VIDEOS -->
+    <section id="page-videos" class="page">
+      <div class="pad">
+        <details>
+          <summary class="btn">+ Upload a video 🎥</summary>
+          <input id="v-file" type="file" accept="video/*">
+          <input id="v-desc" placeholder="Description">
+          <button class="btn" onclick="addVideo()">Post video</button>
+        </details>
+      </div>
+      <div id="video-list" class="reels"></div>
+    </section>
+
+    <!-- PAGE 4: LOST AND FOUND -->
+    <section id="page-lost" class="page">
+      <div class="pad">
+        <input id="lost-search" placeholder="Search lost items 🔍" oninput="renderLost()">
+        <div id="lost-chips" class="chips"></div>
+        <details>
+          <summary class="btn">+ Post a lost / found item 🔎</summary>
+          <input id="l-title" placeholder="Item name">
+          <select id="l-category"><option>Phone</option><option>Bag</option><option>Book</option><option>Pen</option><option>Other</option></select>
+          <input id="l-comment" placeholder="Comment (where was it found?)">
+          <input id="l-img" type="file" accept="image/*">
+          <button class="btn" onclick="addLost()">Post item</button>
+        </details>
+        <div id="lost-list"></div>
+      </div>
+    </section>
+
+    <!-- PAGE 5: ANNOUNCEMENTS -->
+    <section id="page-news" class="page"><div class="pad" id="news-list"></div></section>
+
+    <!-- PAGE 6: PROFILE -->
+    <section id="page-profile" class="page"><div class="pad" id="profile-box"></div></section>
+
+    <!-- PAGE 7: DIRECT MESSAGES -->
+    <section id="page-dm" class="page"><div class="pad" id="dm-box"></div></section>
+
+    <!-- PAGE 8: NOTIFICATIONS -->
+    <section id="page-notifs" class="page"><div class="pad" id="notif-list"></div></section>
+
+<!-- NAV BUTTON BAR -->
+<nav>
+    <button id="nav-feed" class="on" onclick="showPage('feed')">Feed 🏠</button>
+    <button id="nav-videos" onclick="showPage('videos')">Reels 🎬</button>
+    <button id="nav-lost" onclick="showPage('lost')">Lost 🔍</button>
+    <button id="nav-news" onclick="showPage('news')">News 📢</button>
+    <button id="nav-profile" onclick="showPage('profile')">Me 👤</button>
+</nav>
+</main>
+    <script src="script.js"></script>
+</body>
+</html>
