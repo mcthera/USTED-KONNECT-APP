@@ -54,19 +54,6 @@
         <div id="feed-list"></div>
     </section>
 
-    <!-- PAGE 3: VIDEOS -->
-    <section id="page-videos" class="page">
-      <div class="pad">
-        <details>
-          <summary class="btn">+ Upload a video 🎥</summary>
-          <input id="v-file" type="file" accept="video/*">
-          <input id="v-desc" placeholder="Description">
-          <button class="btn" onclick="addVideo()">Post video</button>
-        </details>
-      </div>
-      <div id="video-list" class="reels"></div>
-    </section>
-
     <!-- PAGE 4: LOST AND FOUND -->
     <section id="page-lost" class="page">
       <div class="pad">
@@ -99,9 +86,8 @@
 <!-- NAV BUTTON BAR -->
 <nav>
     <button id="nav-feed" class="on" onclick="showPage('feed')">Feed 🏠</button>
-    <button id="nav-videos" onclick="showPage('videos')">Reels 🎬</button>
     <button id="nav-lost" onclick="showPage('lost')">Lost 🔍</button>
-    <button id="nav-news" onclick="showPage('news')">News 📢</button>
+    <button id="nav-news" onclick="showPage('news')">Announcements 📢</button>
     <button id="nav-profile" onclick="showPage('profile')">Me 👤</button>
 </nav>
 </main>

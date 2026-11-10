@@ -357,7 +357,7 @@ input[type="file"] {
   overflow-wrap: anywhere;
 }
 
-/* PAGES & REELS */
+/* PAGES */
 .page { display: none; }
 .page.active { 
   display: block; 
@@ -384,42 +384,6 @@ details summary {
   min-height: 42px;
   cursor: pointer;
   list-style: none;
-}
-
-.reels {
-  height: calc(100dvh - 175px);
-  min-height: 450px;
-  overflow-y: auto;
-  border-radius: 24px;
-  scroll-snap-type: y mandatory;
-  box-shadow: var(--shadow);
-}
-
-.reel {
-  position: relative;
-  min-height: 100%;
-  margin-bottom: 12px;
-  overflow: hidden;
-  border-radius: 24px;
-  background: #0F172A;
-  color: #fff;
-  scroll-snap-align: start;
-}
-
-.reel video {
-  position: absolute;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.reel .info {
-  position: absolute;
-  right: 84px;
-  bottom: 24px;
-  left: 20px;
-  z-index: 1;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
 }
 
 /* CHIPS & CARDS */
@@ -470,6 +434,34 @@ details summary {
 .news {
   border-left: 6px solid var(--accent-pink);
   background: linear-gradient(90deg, rgba(236,72,153,0.04) 0%, #ffffff 100%);
+}
+
+.announcement-composer {
+  margin-bottom: 20px;
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.announcement-composer label {
+  display: block;
+  margin-bottom: 12px;
+  font-weight: 800;
+}
+
+.announcement-composer textarea {
+  margin-bottom: 0;
+}
+
+.announcement-composer .btn {
+  margin-left: 0;
+}
+
+.news time {
+  display: block;
+  margin-top: 8px;
 }
 
 .bubble {

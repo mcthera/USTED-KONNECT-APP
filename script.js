@@ -13,6 +13,11 @@ const DISAPPEARING_MODE = true;
 const CONTENT_TTL_MS = 24 * 60 * 60 * 1000;
 const CONTENT_EXPIRY_CHECK_INTERVAL_MS = 60 * 1000;
 const expiredPostCleanupAttempts = new Set();
+const DEFAULT_ANNOUNCEMENTS = [
+  { author: 'SRC PRESIDENT', text: 'INCOMING SRC WEEK PARTY AND DRINKS!!.' },
+  { author: 'IT 2A COURSE REP', text: 'NEW BOOKS AVAILABLE.' },
+  { author: 'IT 1A COURSE REP', text: 'PREPARE YOUR STUDENT ID CARD.' },
+];
 
 // Application live state synced with Supabase cloud
 let data = {
@@ -21,7 +26,8 @@ let data = {
   lost: [],
   messages: [],
   notifs: [],
-  reports: []
+  reports: [],
+  announcements: []
 };
 
 let me = localStorage.getItem('campusUser');
@@ -30,28 +36,12 @@ let toastTimer;
 let chatWith = null;       
 let category = 'All';      
 
-// Announcements ticker data
-const announcements = [
-  { from: 'SRC PRESIDENT', text: 'INCOMING SRC WEEK PARTY AND DRINKS!!.' },
-  { from: 'IT 2A COURSE REP', text: 'NEW BOOKS AVAILABLE.' },
-  { from: 'IT 1A COURSE REP', text: 'PREPARE YOUR STUDENT ID CARD.' },
-];
-
-let videos = [
-  { id: 1, by: 'Yaw Owusu', dept: 'Computer Eng', index: 'CE/22/014', skills: 'Video editing', desc: 'Sample video: upload your own!', src: '', likes: [], comments: [] }
-];
-
 // ==========================================
 // INITIALIZATION & CLOUD DATA SYNC
 // ==========================================
 document.addEventListener('DOMContentLoaded', async () => {
   const headerButtons = document.getElementById('header-buttons');
   if(headerButtons) renderHeader();
-
-  const tickerText = document.getElementById('ticker-text');
-  if(tickerText && announcements.length > 0){
-    tickerText.textContent = announcements.map(a => `[${a.from}]: ${a.text}`).join('   ***   ');
-  }
 
   if (DISAPPEARING_MODE) {
     const cleanupRequest = cleanupExpiredCloudPosts();
@@ -67,15 +57,29 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 });
 
+function getVisibleAnnouncements() {
+  return data.announcements.length > 0 ? data.announcements : DEFAULT_ANNOUNCEMENTS;
+}
+
+function renderAnnouncementTicker() {
+  const tickerText = document.getElementById('ticker-text');
+  if (!tickerText) return;
+  tickerText.textContent = getVisibleAnnouncements()
+    .slice(0, 5)
+    .map(item => `[${item.author || item.from || 'CAMPUS X'}]: ${item.text}`)
+    .join('   ***   ');
+}
+
 async function loadCloudData(cleanupRequest, postsQuery) {
   try {
     // Fetch users, posts, lost & found from Supabase tables concurrently
-    const [usersRes, postsRes, lostRes, notifsRes, reportsRes] = await Promise.all([
+    const [usersRes, postsRes, lostRes, notifsRes, reportsRes, announcementsRes] = await Promise.all([
       supabaseClient.from('users').select('*'),
       postsQuery || supabaseClient.from('posts').select('*').order('id', { ascending: false }),
       supabaseClient.from('lost').select('*').order('id', { ascending: false }),
       supabaseClient.from('notifs').select('*'),
       supabaseClient.from('reports').select('*'),
+      supabaseClient.from('announcements').select('*').order('created_at', { ascending: false }),
       cleanupRequest || Promise.resolve()
     ]);
 
@@ -85,7 +89,8 @@ async function loadCloudData(cleanupRequest, postsQuery) {
       post: postsRes,
       lost: lostRes,
       notifs: notifsRes,
-      reports: reportsRes
+      reports: reportsRes,
+      announcements: announcementsRes
     })) {
       if (result.error) {
         console.error(`Could not load ${name}:`, result.error);
@@ -104,6 +109,8 @@ async function loadCloudData(cleanupRequest, postsQuery) {
     expireDisappearingContent();
     renderFeed();
     renderLost();
+    renderNews();
+    renderAnnouncementTicker();
     renderHeader();
     if (hasErrors) showToast('Some campus data could not be loaded.');
   } catch (err) {
@@ -111,6 +118,8 @@ async function loadCloudData(cleanupRequest, postsQuery) {
     showToast('Failed to sync with cloud database.');
     renderFeed();
     renderLost();
+    renderNews();
+    renderAnnouncementTicker();
     renderHeader();
   }
 }
@@ -118,20 +127,16 @@ async function loadCloudData(cleanupRequest, postsQuery) {
 async function cleanupExpiredCloudPosts() {
   const cutoff = Date.now() - CONTENT_TTL_MS;
   try {
-    const { data: candidates, error } = await supabaseClient
+    const { error } = await supabaseClient
       .from('posts')
-      .select('id')
+      .delete()
       .lt('id', cutoff);
     if (error) {
-      console.error('Could not find expired posts for cleanup:', error);
+      console.error('Could not delete expired posts from Supabase:', error);
       showToast('Expired posts will be hidden, but cloud cleanup failed.');
-      return;
     }
-
-    const expiredPosts = (candidates || []).filter(post => isExpiredContent(post));
-    if (expiredPosts.length > 0) await deleteExpiredPosts(expiredPosts);
   } catch (err) {
-    console.error('Could not find expired posts for cleanup:', err);
+    console.error('Could not delete expired posts from Supabase:', err);
     showToast('Expired posts will be hidden, but cloud cleanup failed.');
   }
 }
@@ -168,10 +173,12 @@ async function deleteExpiredPosts(posts) {
   try {
     const { error } = await supabaseClient.from('posts').delete().in('id', ids);
     if (error) {
+      ids.forEach(id => expiredPostCleanupAttempts.delete(id));
       console.error('Expired posts are hidden but could not be deleted from Supabase:', error);
       showToast('Expired posts are hidden, but cloud cleanup failed.');
     }
   } catch (err) {
+    ids.forEach(id => expiredPostCleanupAttempts.delete(id));
     console.error('Expired posts are hidden but could not be deleted from Supabase:', err);
     showToast('Expired posts are hidden, but cloud cleanup failed.');
   }
@@ -188,17 +195,6 @@ function expireDisappearingContent() {
     void deleteExpiredPosts(expiredPosts);
   }
 
-  const expiredVideos = videos.filter(video => isExpiredContent(video));
-  if (expiredVideos.length > 0) {
-    const expiredIds = new Set(expiredVideos.map(video => video.id));
-    expiredVideos.forEach(video => {
-      if (video.src && video.src.startsWith('blob:')) URL.revokeObjectURL(video.src);
-    });
-    videos = videos.filter(video => !expiredIds.has(video.id));
-    if (document.getElementById('page-videos')?.classList.contains('active')) {
-      renderVideos();
-    }
-  }
 }
 
 // Local storage replacement stub (kept empty or minimal since database handles persistence)
@@ -390,7 +386,6 @@ function showPage(name) {
   });
 
   if (name === 'feed') renderFeed();
-  if (name === 'videos') renderVideos();
   if (name === 'lost') renderLost();
   if (name === 'news') renderNews();
   if (name === 'profile') renderProfile();
@@ -539,14 +534,14 @@ function renderFeed(){
   const feedList = document.getElementById('feed-list');
   if (!feedList) return;
 
+  const visiblePosts = data.post.filter(post => !isExpiredContent(post));
   let html = '';
-  if (!data.post || data.post.length === 0) {
+  if (visiblePosts.length === 0) {
     feedList.innerHTML = '<p style="text-align: center; color: var(--details); padding: 20px;">No posts on campus yet. Be the first to post!</p>';
     return;
   }
 
-  for (const post of data.post){
-    if (isExpiredContent(post)) continue;
+  for (const post of visiblePosts){
     const likes = Array.isArray(post.likes) ? post.likes : [];
     const refeeders = Array.isArray(post.refeed) ? post.refeed : [];
     const comments = Array.isArray(post.comments) ? post.comments : [];
@@ -630,34 +625,8 @@ async function addPost(){
 
 
 // ==========================================
-// VIDEOS, LOST & FOUND, NEWS, PROFILE, DMs
+// LOST & FOUND, ANNOUNCEMENTS, PROFILE, DMs
 // ==========================================
-function renderVideos() {
-  const container = document.getElementById('video-list');
-  if(!container) return;
-  let html = '';
-  for (const v of videos) {
-    if (isExpiredContent(v)) continue;
-    const media = v.src ? '<video src="' + v.src + '" controls loop playsinline></video>' : '';
-    const comments = (v.comments || []).map(c => '<div class="comment"><b>' + safe(c.by) + '</b>: ' + safe(c.text) + '</div>').join('');
-    html += '<div class="reel">' + media + '<div class="info"><b>' + safe(v.by) + '</b><br>' + safe(v.desc) + comments + '</div></div>';
-  }
-  container.innerHTML = html;
-}
-
-function addVideo() {
-  if (!requiredlogin()) return;
-  const file = document.getElementById('v-file').files[0];
-  if (!file) { showToast('Choose a video first.'); return; }
-  const u = myUser();
-  videos.unshift({
-    id: Date.now(), by: me, dept: u.dept, index: u.index, skills: u.skills,
-    desc: document.getElementById('v-desc').value,
-    src: URL.createObjectURL(file), createdAt: Date.now(), likes: [], comments: []
-  });
-  renderVideos();
-}
-
 function renderLost() {
   const search = (document.getElementById('lost-search')?.value || '').trim().toLowerCase();
   let chips = '';
@@ -713,7 +682,59 @@ async function addLost() {
 function renderNews() {
   const newsList = document.getElementById('news-list');
   if(!newsList) return;
-  newsList.innerHTML = announcements.map(a => '<div class="card news"><b>' + a.from + '</b><p>' + a.text + '</p></div>').join('');
+  const composer = me ? `
+    <form class="announcement-composer" onsubmit="addAnnouncement(event)">
+      <label for="announcement-text">Share a campus announcement</label>
+      <textarea id="announcement-text" maxlength="500" rows="3" placeholder="Write an announcement (up to 500 characters)" required></textarea>
+      <button class="btn" type="submit">Post announcement</button>
+    </form>` : '<p class="muted">Log in to post a campus announcement.</p>';
+  const announcementCards = getVisibleAnnouncements().map(item => {
+    const date = item.created_at ? new Date(item.created_at).toLocaleString() : '';
+    return `<article class="card news">
+      <b>${safe(item.author || item.from || 'CAMPUS X')}</b>
+      <p>${safe(item.text)}</p>
+      ${date ? `<time class="muted" datetime="${safeAttr(item.created_at)}">${safe(date)}</time>` : ''}
+    </article>`;
+  }).join('');
+  newsList.innerHTML = composer + announcementCards;
+}
+
+async function addAnnouncement(event) {
+  event.preventDefault();
+  if (!requiredlogin()) return;
+
+  const input = document.getElementById('announcement-text');
+  const text = input.value.trim();
+  if (!text) {
+    showToast('Write an announcement before posting.');
+    return;
+  }
+
+  const button = event.currentTarget.querySelector('button[type="submit"]');
+  button.disabled = true;
+  try {
+    const announcement = { author: me, text: text };
+    const { error } = await supabaseClient.from('announcements').insert([announcement]);
+    if (error) {
+      console.error('Announcement upload failed:', error);
+      showToast('Could not post announcement. Check the announcements table and try again.');
+      return;
+    }
+
+    data.announcements.unshift({
+      ...announcement,
+      created_at: new Date().toISOString()
+    });
+    input.value = '';
+    renderNews();
+    renderAnnouncementTicker();
+    showToast('Announcement posted.');
+  } catch (err) {
+    console.error('Announcement upload failed:', err);
+    showToast('Could not post announcement. Check your connection and try again.');
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function renderProfile() {
