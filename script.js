@@ -2,8 +2,12 @@
 // CAMPUSX - PRODUCTION READY (SUPABASE POWERED)
 // ==========================================
 
-const SUPABASE_URL=https://lnggbqfrbcehuyjtlswn.supabase.co;
-const SUPABASE_ANON_KEY=sb_publishable_vSKR8TL4AUzMQWJiiZoMfA_mFPMx9qP;
+// ==========================================
+// CAMPUSX - PRODUCTION READY (SUPABASE POWERED)
+// ==========================================
+
+const SUPABASE_URL = 'https://lnggbqfrbcehuyjtlswn.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_vSKR8TL4AUzMQWJiiZoMfA_mFPMx9qP';
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Application live state synced with Supabase cloud
